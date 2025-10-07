@@ -1,6 +1,6 @@
 ---
-title: "Analysis of a Simulated Longitudinal Clinical Trial"
-author: "Gemini AI"
+title: "Trial Side Effects Analysis : Using Three-Level-Linear Mixed Effects Model"
+author: "Vismaya S D | MSc.Statistics | Manipal University"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
@@ -312,4 +312,5 @@ The following details show the R version and package versions used to generate t
 
 ```{r session-info, echo=FALSE}
 sessionInfo()
+
 ```
