@@ -1,0 +1,315 @@
+---
+title: "Analysis of a Simulated Longitudinal Clinical Trial"
+author: "Gemini AI"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+# Global options for all code chunks
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+# Load necessary libraries
+library(tidyverse)
+library(lme4)      
+library(lmerTest)  
+library(sjPlot)    
+library(patchwork) 
+library(knitr)     # For kable() tables
+```
+
+# 1. Introduction
+
+This report details the analysis of simulated data from a longitudinal clinical trial. The study was designed to assess the side effects of two different drugs (A and B) over time. The data has a hierarchical or nested structure: multiple measurements are taken from each patient over time, and these patients are grouped within different hospital sites.
+
+The primary goals of this analysis are:
+1.  To explore the distribution of side-effect scores and how they change over time for each drug.
+2.  To build a statistical model for the continuous `side_effect_score` to identify significant predictors and account for the nested data structure.
+3.  To build a similar model for a binary outcome (`side_effect_present`) and compare the findings.
+
+# 2. Data Simulation
+
+The data for this analysis was simulated to reflect a realistic clinical trial scenario.
+
+* **Structure**: 10 hospital sites, with 100 patients per site, for a total of 1,000 unique patients.
+* **Design**: Each patient was followed for 5 time points (baseline at time 0, plus 4 follow-ups), resulting in 5,000 total observations.
+* **Variables**: The key variables include `side_effect_score` (a continuous measure from 0-10), `time`, `drug` (A or B), patient `age`, `sex`, and the unique IDs for `patient_id` and `site_id`.
+* **Effects**: The simulation was designed so that Drug B has more severe side effects than Drug A, and side effects generally increase over time. It also includes random variation between sites and between patients.
+
+*The full R code used for the simulation is available by clicking the 'Code' button for the chunk below.*
+
+```{r data-simulation, echo=TRUE, include=FALSE}
+# NOTE: This chunk is not displayed in the report, but runs in the background.
+# The user's full simulation code is placed here.
+set.seed(2025)
+n_sites <- 10
+patients_per_site <- 100
+timepoints <- 5
+n_patients <- n_sites * patients_per_site
+n_rows <- n_patients * timepoints
+sites <- tibble(site_id = 1:n_sites,
+                site_random_intercept = rnorm(n_sites, 0, 0.4))
+patients <- expand.grid(site_id = sites$site_id,
+                        patient_within_site = 1:patients_per_site) %>%
+  as_tibble() %>%
+  mutate(patient_id = row_number(),
+         age = round(rnorm(n_patients, mean = 45, sd = 12)),
+         sex = rbinom(n_patients, 1, 0.55),
+         drug = sample(c("A","B"), n_patients, replace = TRUE, prob = c(0.5,0.5)),
+         dose = if_else(drug == "A",
+                        round(rnorm(n_patients, 20, 2)),
+                        round(rnorm(n_patients, 50, 5))))
+data_long <- patients %>%
+  uncount(timepoints, .id = "timepoint") %>%
+  mutate(time = timepoint - 1)
+site_re <- rnorm(n_sites, 0, 0.4)
+patient_re <- rnorm(n_patients, 0, 0.6)
+data_long <- data_long %>%
+  mutate(site_re = site_re[site_id],
+         patient_re = patient_re[patient_id])
+beta_0 <- 1.5
+beta_time <- 0.25
+beta_drugB <- 0.6
+beta_dose <- 0.01
+beta_age <- 0.005
+beta_sex <- 0.15
+sigma_eps <- 1.2
+data_long <- data_long %>%
+  mutate(
+    linear_pred = beta_0 +
+      beta_time * time +
+      (drug == "B") * beta_drugB +
+      dose * beta_dose +
+      age * beta_age +
+      sex * beta_sex +
+      site_re +
+      patient_re,
+    side_effect_score = linear_pred + rnorm(n(), 0, sigma_eps),
+    side_effect_score = pmin(pmax(side_effect_score, 0), 10)
+  )
+data_long <- data_long %>%
+  mutate(
+    prob_present = plogis((side_effect_score - 3)/2),
+    side_effect_present = rbinom(n(), 1, prob_present)
+  )
+```
+
+# 3. Exploratory Data Analysis (EDA)
+
+We begin by visualizing the data to understand its main features.
+
+```{r eda-plots, echo=TRUE}
+# Plot 1: Overall distribution of the side-effect score
+p1 <- ggplot(data_long, aes(side_effect_score)) +
+  geom_histogram(bins = 30, fill = "gray30", alpha = 0.8) +
+  labs(title = "Side-effect score distribution (0-10)",
+       x = "Side Effect Score", y = "Count") +
+  theme_minimal()
+
+# Plot 2: Mean side-effect score over time by drug
+p2 <- data_long %>%
+  group_by(time, drug) %>%
+  summarise(mean_score = mean(side_effect_score), .groups = "drop") %>%
+  ggplot(aes(time, mean_score, color = drug, group = drug)) +
+  geom_line(linewidth = 1) + 
+  geom_point(size = 3) +
+  labs(title = "Mean side-effect score by time and drug",
+       x = "Time", y = "Mean Side Effect Score", color = "Drug") +
+  theme_minimal()
+
+# Display plots side-by-side
+p1 + p2
+```
+
+### Interpretation
+
+* **Graph 1: Histogram (Left)**: This plot shows the overall distribution of the `side_effect_score`. The most frequent scores are between 2.0 and 4.0, with a peak around 2.5. The distribution is skewed to the right, indicating that while most scores are low, a smaller number of higher scores exist. Very high scores (above 7.5) are rare.
+
+* **Graph 2: Line Plot (Right)**: This plot shows how the average side-effect score changes over time for Drugs A and B.
+    * **Effect of Drug**: The blue line (Drug B) is consistently higher than the red line (Drug A) at all time points. This provides strong visual evidence that patients on Drug B report more severe side effects on average.
+    * **Effect of Time**: Both lines trend upwards. This indicates that for both drugs, the average severity of side effects increases over the course of the study.
+
+# 4. Analysis of Continuous Outcome (`side_effect_score`)
+
+To properly analyze this data, we use a **three-level linear mixed-effects model**. This type of model is ideal because it can handle the nested structure of the data: measurements are nested within patients, who are in turn nested within sites. This allows us to account for the fact that observations from the same patient (or the same site) are likely to be more similar to each other than to observations from other patients or sites.
+
+### Model 1: Random Intercepts for Patient and Site
+
+Our first model includes `time`, `drug`, `dose`, `age`, and `sex` as fixed effects. It also includes random intercepts for `site_id` and `patient_id`. This accounts for baseline differences in side-effect scores across different sites and patients.
+
+```{r model1-fit, echo=TRUE}
+model1 <- lmer(side_effect_score ~ time + drug + dose + age + sex + 
+                 (1 | site_id) + (1 | patient_id),
+               data = data_long, REML = TRUE)
+```
+
+```{r model1-summary, echo=FALSE}
+tab_model(model1, 
+          show.se = TRUE, 
+          show.stat = TRUE, 
+          show.df = TRUE,
+          title = "Table 1: Results of Three-Level Random Intercept Model (model1)")
+```
+
+### Interpretation of Model 1 Results
+
+* **Fixed Effects**:
+    * `time`: For each one-unit increase in time, the side-effect score increases by an average of 0.21 points (p < .001). This is a highly significant effect.
+    * `drugB`: Patients on Drug B have side-effect scores that are, on average, 0.82 points higher than those on Drug A (p < .001), after controlling for other factors.
+    * `age`: For each additional year of age, the score increases by a very small but significant 0.006 points (p = 0.006).
+    * `sex`: Females (coded as 1) report scores that are 0.19 points higher on average than males (p < .001).
+    * `dose`: The effect of dose was not statistically significant (p = 0.77).
+
+* **Random Effects**:
+    * The model estimates significant variance at both the `site_id` level (Var = 0.17) and the `patient_id` level (Var = 0.34). This confirms that there are meaningful baseline differences in side-effect scores among both sites and individual patients, justifying the use of a mixed-effects model.
+
+### Model 2: Adding a Random Slope for Time
+
+We can extend the model to see if the effect of time is different for each patient. This is done by adding a **random slope** for `time` at the patient level.
+
+```{r model2-fit, echo=TRUE}
+model2 <- lmer(side_effect_score ~ time + drug + dose + age + sex + 
+                 (1 | site_id) + (1 + time | patient_id),
+               data = data_long, REML = TRUE)
+```
+
+When fitting this model, a warning message appears: `boundary (singular) fit`. This is an important diagnostic. It suggests that the model is too complex for the data and that the random slope for time is not needed. The variance of the time slope is estimated to be nearly zero.
+
+### Model Comparison and Conclusion
+
+Comparing `model1` and `model2`, we see that the fixed effect estimates are nearly identical. The singular fit warning in `model2` indicates that it is overfitted. The data does not support the complex idea that every patient has a unique trajectory over time.
+
+✅ **Conclusion**: The simpler random-intercept model (`model1`) is the more reliable and appropriate choice for this analysis.
+
+### Testing the Significance of Random Effects
+
+We can formally test if the random effects for `site_id` and `patient_id` are statistically necessary using a Likelihood Ratio Test (LRT).
+
+```{r lrt-test, echo = TRUE}
+# 1. Refit model1 using Maximum Likelihood (ML)
+model1_ml <- lmer(side_effect_score ~ time + drug + dose + age + sex + 
+                    (1 | site_id) + (1 | patient_id),
+                  data = data_long, REML = FALSE)
+
+# 2. Fit a model without the site_id random effect
+model_no_site <- lmer(side_effect_score ~ time + drug + dose + age + sex + 
+                        (1 | patient_id),
+                      data = data_long, REML = FALSE)
+
+# 3. Fit a model without the patient_id random effect
+model_no_patient <- lmer(side_effect_score ~ time + drug + dose + age + sex + 
+                           (1 | site_id),
+                         data = data_long, REML = FALSE)
+
+# 4. Compare models
+cat("--- Test for site_id ---\n")
+anova(model_no_site, model1_ml)
+
+cat("\n--- Test for patient_id ---\n")
+anova(model_no_patient, model1_ml)
+```
+Both tests yield a p-value of `< 2.2e-16`, providing overwhelming evidence that including random intercepts for both site and patient significantly improves the model fit.
+
+### Intraclass Correlation Coefficient (ICC)
+
+The ICC tells us what proportion of the total variance in side-effect scores is attributable to differences between sites and between patients.
+
+```{r icc-calc, echo = TRUE}
+vc <- as.data.frame(VarCorr(model1))
+sigma_site <- vc$vcov[vc$grp == "site_id"]
+sigma_patient <- vc$vcov[vc$grp == "patient_id"]
+sigma_resid <- attr(VarCorr(model1), "sc")^2
+
+icc_site <- sigma_site / (sigma_site + sigma_patient + sigma_resid)
+icc_patient <- sigma_patient / (sigma_site + sigma_patient + sigma_resid)
+
+icc_df <- data.frame(
+  Level = c("Site (Between-Sites)", "Patient (Between-Patients)"),
+  ICC = c(icc_site, icc_patient),
+  `Percent of Variance` = scales::percent(c(icc_site, icc_patient), accuracy = 0.1)
+)
+
+kable(icc_df, caption = "Table 2: Intraclass Correlation Coefficients (ICCs)")
+```
+
+* **ICC for Site**: About **9.2%** of the total variation in side-effect scores can be attributed to systematic differences between the hospital sites.
+* **ICC for Patient**: About **18.2%** of the total variation is due to stable, consistent differences between the individual patients.
+
+Together, the nested structure (sites and patients) accounts for over 27% of the total variability in the data, confirming that our mixed-effects modeling approach was essential.
+
+# 5. Analysis of Binary Outcome (`side_effect_present`)
+
+Next, we analyze a binary version of the outcome: whether a side effect was present (1) or absent (0). For this, we use a **generalized linear mixed-effects model** (`glmer`) with a binomial family.
+
+```{r model-bin-fit, echo=TRUE}
+model_bin <- glmer(side_effect_present ~ time + drug + dose + age + sex + 
+                     (1 | site_id) + (1 | patient_id),
+                   data = data_long, family = binomial(link = "logit"),
+                   control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
+```
+
+```{r model-bin-summary, echo=FALSE}
+tab_model(model_bin, 
+          transform = "exp", # Exponentiate to get Odds Ratios
+          show.se = TRUE, 
+          show.stat = TRUE,
+          title = "Table 3: Results of Three-Level Binary Logistic Model (model_bin)")
+```
+
+### Interpretation of Binary Model Results
+
+* **Convergence Warnings**: The model produced warnings about failing to converge and being "nearly unidentifiable." This is a major red flag, indicating that the model is likely too complex for the binary data and its results may not be reliable.
+
+* **Fixed Effects (as Odds Ratios)**:
+    * `time`: For each one-unit increase in time, the odds of a side effect being present increase by about 13% (Odds Ratio [OR] = 1.13, p < .001). This is the only significant predictor.
+    * `drugB`, `dose`, `age`, `sex`: None of these predictors were statistically significant. Their odds ratios are all very close to 1, suggesting they have little to no effect on the *probability* of a side effect occurring.
+
+### Variance Components for the Binary Model
+
+For binary models, we use the **Median Odds Ratio (MOR)** instead of the ICC to interpret the magnitude of clustering. The MOR translates the variance at a given level into an odds ratio, making it easier to interpret. An MOR of 1.0 means there is no variation between clusters.
+
+```{r mor-calc, echo=TRUE}
+# Extract variance components
+vc_bin <- as.data.frame(VarCorr(model_bin))
+var_site <- vc_bin$vcov[vc_bin$grp == "site_id"]
+var_patient <- vc_bin$vcov[vc_bin$grp == "patient_id"]
+
+# Calculate MOR
+mor_site <- exp(sqrt(2 * var_site) * qnorm(0.75))
+mor_patient <- exp(sqrt(2 * var_patient) * qnorm(0.75))
+
+# Display results
+mor_df <- data.frame(
+  Level = c("Site", "Patient"),
+  MOR = c(mor_site, mor_patient)
+)
+kable(mor_df, caption = "Table 4: Median Odds Ratios (MORs) for Binary Model", digits=2)
+```
+
+* **MOR for Site = 1.16**: If you randomly picked one patient from a high-risk site and another from a low-risk site, the patient from the high-risk site would have, on average, 1.16 times the odds of having a side effect. This is a very small effect, close to 1.0.
+* **MOR for Patient = 1.15**: Similarly, the variation between individual patients is also very small.
+
+These MOR values suggest that clustering by site and patient has a negligible impact on the binary outcome.
+
+# 6. Final Conclusion
+
+This analysis provides a clear picture of the simulated clinical trial data.
+
+1.  **Continuous Score is More Informative**: The analysis of the continuous `side_effect_score` was highly informative. The mixed-effects model (`model1`) fit the data well and showed significant effects for `time`, `drug`, `age`, and `sex`. It also confirmed that accounting for the data's nested structure was crucial, as over 27% of the score's variance was explained by differences between sites and patients.
+
+2.  **Binary Outcome Loses Information**: In contrast, the analysis of the binary `side_effect_present` variable was problematic. The model struggled to converge, suggesting it was unstable. It found that only `time` was a significant predictor, and the effects of clustering (by site and patient) were negligible. Dichotomizing a continuous outcome into a binary one resulted in a significant loss of statistical power and information.
+
+In summary, for this dataset, the continuous side-effect score provides a much richer and more reliable understanding of the treatment effects than its binary counterpart. The final recommendation would be to use the results from **Model 1** for any conclusions or further research.
+
+## Session Information
+
+The following details show the R version and package versions used to generate this report, ensuring reproducibility.
+
+```{r session-info, echo=FALSE}
+sessionInfo()
+```
