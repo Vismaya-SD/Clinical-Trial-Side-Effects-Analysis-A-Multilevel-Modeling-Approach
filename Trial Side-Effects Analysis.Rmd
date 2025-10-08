@@ -1,5 +1,5 @@
 ---
-title: "Trial Side Effects Analysis : Using Three-Level-Linear Mixed Effects Model"
+title: "Clinical Trial Side-Effects Analysis: A Multilevel Modeling Approach"
 author: "Vismaya S D | MSc.Statistics | Manipal University"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -138,7 +138,7 @@ p1 + p2
 
 To properly analyze this data, we use a **three-level linear mixed-effects model**. This type of model is ideal because it can handle the nested structure of the data: measurements are nested within patients, who are in turn nested within sites. This allows us to account for the fact that observations from the same patient (or the same site) are likely to be more similar to each other than to observations from other patients or sites.
 
-### Model 1: Random Intercepts for Patient and Site
+### 4.1 Model 1: Random Intercepts for Patient and Site
 
 Our first model includes `time`, `drug`, `dose`, `age`, and `sex` as fixed effects. It also includes random intercepts for `site_id` and `patient_id`. This accounts for baseline differences in side-effect scores across different sites and patients.
 
@@ -168,7 +168,7 @@ tab_model(model1,
 * **Random Effects**:
     * The model estimates significant variance at both the `site_id` level (Var = 0.17) and the `patient_id` level (Var = 0.34). This confirms that there are meaningful baseline differences in side-effect scores among both sites and individual patients, justifying the use of a mixed-effects model.
 
-### Model 2: Adding a Random Slope for Time
+### 4.2 Model 2: Adding a Random Slope for Time
 
 We can extend the model to see if the effect of time is different for each patient. This is done by adding a **random slope** for `time` at the patient level.
 
@@ -180,13 +180,13 @@ model2 <- lmer(side_effect_score ~ time + drug + dose + age + sex +
 
 When fitting this model, a warning message appears: `boundary (singular) fit`. This is an important diagnostic. It suggests that the model is too complex for the data and that the random slope for time is not needed. The variance of the time slope is estimated to be nearly zero.
 
-### Model Comparison and Conclusion
+### 4.3 Model Comparison and Conclusion
 
 Comparing `model1` and `model2`, we see that the fixed effect estimates are nearly identical. The singular fit warning in `model2` indicates that it is overfitted. The data does not support the complex idea that every patient has a unique trajectory over time.
 
 ✅ **Conclusion**: The simpler random-intercept model (`model1`) is the more reliable and appropriate choice for this analysis.
 
-### Testing the Significance of Random Effects
+### 4.4 Testing the Significance of Random Effects
 
 We can formally test if the random effects for `site_id` and `patient_id` are statistically necessary using a Likelihood Ratio Test (LRT).
 
@@ -215,7 +215,7 @@ anova(model_no_patient, model1_ml)
 ```
 Both tests yield a p-value of `< 2.2e-16`, providing overwhelming evidence that including random intercepts for both site and patient significantly improves the model fit.
 
-### Intraclass Correlation Coefficient (ICC)
+### 4.5 Intraclass Correlation Coefficient (ICC)
 
 The ICC tells us what proportion of the total variance in side-effect scores is attributable to differences between sites and between patients.
 
@@ -312,5 +312,4 @@ The following details show the R version and package versions used to generate t
 
 ```{r session-info, echo=FALSE}
 sessionInfo()
-
 ```
