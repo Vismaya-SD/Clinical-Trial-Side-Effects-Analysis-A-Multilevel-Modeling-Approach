@@ -4,10 +4,11 @@ author: "Vismaya S D | MSc.Statistics | Manipal University"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
+    css: style.css
+    toc: true
+    toc_float: true
     theme: flatly
-    toc: yes
-    toc_float: yes
-    code_folding: hide
+    highlight: tango
 ---
 
 ```{r setup, include=FALSE}
@@ -313,3 +314,4 @@ The following details show the R version and package versions used to generate t
 ```{r session-info, echo=FALSE}
 sessionInfo()
 ```
+
