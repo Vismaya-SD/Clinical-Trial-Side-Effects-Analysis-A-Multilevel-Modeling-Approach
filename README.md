@@ -20,7 +20,7 @@ The analysis demonstrates the application of mixed-effects models, a powerful st
 ## Repository Structure
 
 * `Trial-Side-Effects-Analysis.Rmd`: The R Markdown source file. It contains all the R code for data simulation, EDA, statistical modeling, and the complete narrative of the analysis.
-* `Trial-Side-Effects-Analysis.html`: The final, self-contained HTML report generated from the R Markdown file. **Click the "View Live Report" badge at the top to see the rendered page directly.**
+* `Clinical Trial Side-Effects Analysis.html`: The final, self-contained HTML report generated from the R Markdown file. **Click the "View Live Report" badge at the top to see the rendered page directly.**
 * `.gitignore`: A standard file that tells Git to ignore temporary files specific to R and RStudio.
 
 ## How to Reproduce the Analysis
@@ -33,7 +33,7 @@ To reproduce this analysis on your own machine, follow these steps:
     ```r
     install.packages(c("tidyverse", "lme4", "lmerTest", "sjPlot", "patchwork", "knitr"))
     ```
-4.  Click the **Knit** button in RStudio to re-generate the `Trial-Side-Effects-Analysis.html` report.
+4.  Click the **Knit** button in RStudio to re-generate the `Clinical Trial Side-Effects Analysis.html` report.
 
 ## Summary of Findings
 
