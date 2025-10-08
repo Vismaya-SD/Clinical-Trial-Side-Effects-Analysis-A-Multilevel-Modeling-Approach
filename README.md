@@ -1,7 +1,7 @@
 # Clinical Trial Side-Effects Analysis: A Multilevel Modeling Approach
 Clinical Trial Side-Effects Analysis: A Multilevel Modeling Approach
 
-[![View Live Report](https://img.shields.io/badge/View-Live%20Report-brightgreen)](https://htmlpreview.github.io/?https://github.com/Vismaya-SD/Trial-Side-Effects-Analysis-Three-Level-Linear-Mixed-Effects-Model/blob/main/Trial-Side-Effects-Analysis.html)
+[![View Live Report](https://img.shields.io/badge/View-Live%20Report-brightgreen)](https://htmlpreview.github.io/?https://github.com/Vismaya-SD/Trial-Side-Effects-Analysis-Three-Level-Linear-Mixed-Effects-Model/blob/main/Clinical%20Trial%20Side-Effects%20Analysis.html)
 [![Language](https://img.shields.io/badge/Language-R-blue.svg)](https://www.r-project.org/)
 
 ## Project Overview
