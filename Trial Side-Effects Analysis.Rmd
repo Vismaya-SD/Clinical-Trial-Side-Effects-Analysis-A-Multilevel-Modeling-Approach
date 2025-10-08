@@ -1,14 +1,14 @@
 ---
 title: "Clinical Trial Side-Effects Analysis: A Multilevel Modeling Approach"
-author: "Vismaya S D | MSc.Statistics | Manipal University"
+author: "Vismaya S D | MSc.Biostatistics | Manipal University"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
-    css: style.css
-    toc: true
-    toc_float: true
     theme: flatly
-    highlight: tango
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+    self_contained: false
 ---
 
 ```{r setup, include=FALSE}
@@ -314,4 +314,3 @@ The following details show the R version and package versions used to generate t
 ```{r session-info, echo=FALSE}
 sessionInfo()
 ```
-
